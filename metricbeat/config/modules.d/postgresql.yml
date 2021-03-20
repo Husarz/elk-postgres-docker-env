@@ -1,0 +1,12 @@
+- module: postgresql
+  metricsets: ["status"]
+  enabled: true
+  period: 10s
+  hosts: ["postgres://postgres:5432?sslmode=disable"]
+  metricsets:
+    - database
+    - bgwriter
+    - activity
+    - statement
+  username: postgres
+  password: postgres

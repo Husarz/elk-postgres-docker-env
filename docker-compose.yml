@@ -1,0 +1,122 @@
+version: '3.5'
+
+services:
+
+  #Elasticsearch container
+  elasticsearch:
+    container_name: elasticsearch
+    hostname: elasticsearch
+    image: "docker.elastic.co/elasticsearch/elasticsearch:${ELASTIC_VERSION}"
+    environment:
+      - http.host=0.0.0.0
+      - transport.host=127.0.0.1
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xmx256m -Xms256m"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - ./config/elasticsearch/elasticsearch.yml:/usr/share/elasticsearch/elasticsearch.yml
+      - esdata:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+    healthcheck:
+      test: ["CMD", "curl","-s" ,"-f", "-u", "elastic:${ES_PASSWORD}", "http://localhost:9200/_cat/health"]
+    networks:
+      - local-env-stack
+
+  #Kibana container
+  kibana:
+    container_name: kibana
+    hostname: kibana
+    image: "docker.elastic.co/kibana/kibana:${ELASTIC_VERSION}"
+    volumes:
+      - ./config/kibana/kibana.yml:/usr/share/kibana/kibana.yml
+    ports: ['5601:5601']
+    networks:
+      - local-env-stack
+    depends_on: 
+      - elasticsearch
+    environment:
+      - "ELASTICSEARCH_PASSWORD=${ES_PASSWORD}"
+    healthcheck:
+      test: ["CMD", "curl", "-s", "-f", "http://localhost:5601/login"]
+      retries: 6
+
+  #Postgres container
+  postgres:
+    container_name: postgres
+    image: postgres:13
+    environment:
+      - POSTGRES_PASSWORD=postgres
+    volumes:
+      - ./postgres/conf/postgresql.conf:/etc/postgresql/postgresql.conf
+      - ./postgres/data/:/var/lib/postgresql/data:rw
+      - pglogs:/var/log/postgresql/:rw
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf
+    ports:
+      - "5432:5432"
+    networks:
+      - local-env-stack
+
+  #Filebeat container
+  filebeat:
+    container_name: filebeat
+    hostname: filebeat
+    user: root
+    image: "docker.elastic.co/beats/filebeat:${ELASTIC_VERSION}"
+    # environment:
+    #   - strict.perms=false
+    volumes:
+      - ./filebeat/config/filebeat.yml:/usr/share/filebeat/filebeat.yml
+      - pglogs:/var/log/postgresql/:ro
+      - /var/lib/docker/containers:/hostfs/var/lib/docker/containers
+      - fbdata:/usr/share/filebeat/data/
+    networks:
+      - local-env-stack
+    command: filebeat -e -E output.elasticsearch.username=elastic -E output.elasticsearch.password=${ES_PASSWORD} -strict.perms=false
+    restart: on-failure
+    depends_on:
+      - elasticsearch
+      - postgres
+
+  #metricbeat container
+  metricbeat:
+    container_name: metricbeat
+    hostname: metricbeat
+    image: docker.elastic.co/beats/metricbeat:${ELASTIC_VERSION}
+    volumes:
+      - ./metricbeat/config/metricbeat.yml:/usr/share/metricbeat/metricbeat.yml
+      - ./metricbeat/config/modules.d/:/usr/share/metricbeat/modules.d/
+      # The commented sections below enable Metricbeat to monitor the Docker host rather than the Metricbeat container. These are used by the system module.
+      - /proc:/hostfs/proc:ro
+      - /sys/fs/cgroup:/hostfs/sys/fs/cgroup:ro
+      #Allows us to report on docker from the hosts information
+      - /var/run/docker.sock:/var/run/docker.sock
+      #We mount the host filesystem so we can report on disk usage with the system module
+      - /:/hostfs:ro
+    networks:
+      - local-env-stack
+    command: metricbeat -e -system.hostfs=/hostfs -E output.elasticsearch.username=elastic -E output.elasticsearch.password=${ES_PASSWORD} -strict.perms=false
+    restart: on-failure
+    depends_on:
+      - postgres
+      - elasticsearch
+
+volumes:
+  #Postgres logs
+  pglogs:
+    driver: local
+  #Es data
+  esdata:
+    driver: local
+  #Filebeat data
+  fbdata:
+    driver: local
+
+networks:
+  local-env-stack:
+    driver: bridge
+    external:
+      name: elk

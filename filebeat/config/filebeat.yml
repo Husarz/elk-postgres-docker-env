@@ -1,0 +1,14 @@
+filebeat.modules:
+#Filebeat system module consumes logs from host OS through a mounted volume
+- module: system
+  syslog:
+    var.paths: ["/var/log/host/system.log*"]
+
+- module: postgresql
+  log:
+    enabled: true
+    var.paths: ['/var/log/postgresql/*.log']
+
+#All data to indexed to Elasticsearch
+output.elasticsearch:
+  hosts: ["elasticsearch:9200"]
