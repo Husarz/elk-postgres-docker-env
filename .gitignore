@@ -1,7 +1,12 @@
+target/
+.theia/
+/postgres/data/
+
 # Compiled class file
 *.class
 
 # Log file
+.logs/
 *.log
 
 # BlueJ files
